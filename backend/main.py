@@ -4,7 +4,8 @@ import requests
 import os
 from dotenv import load_dotenv
 import fitz  # PyMuPDF
-from sentence_transformers import SentenceTransformer, util
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # ------------------ LOAD ENV ------------------
 
@@ -15,7 +16,6 @@ RAPID_KEY = os.getenv("RAPID_API_KEY")
 
 app = FastAPI()
 
-# Enable CORS (frontend connect karne ke liye)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,9 +23,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Load embedding model once
-model = SentenceTransformer("all-MiniLM-L6-v2")
 
 # ------------------ HOME ROUTE ------------------
 
@@ -42,13 +39,16 @@ def extract_text_from_pdf(file_bytes):
         text += page.get_text()
     return text
 
-# ------------------ AI MATCH SCORE ------------------
+# ------------------ MATCH SCORE (Lightweight) ------------------
 
 def calculate_match_score(resume_text, job_text):
-    resume_embedding = model.encode(resume_text, convert_to_tensor=True)
-    job_embedding = model.encode(job_text, convert_to_tensor=True)
-    score = util.cos_sim(resume_embedding, job_embedding)
-    return round(float(score[0][0]) * 100, 2)
+    try:
+        vectorizer = TfidfVectorizer(stop_words="english")
+        tfidf = vectorizer.fit_transform([resume_text, job_text])
+        score = cosine_similarity(tfidf[0:1], tfidf[1:2])
+        return round(float(score[0][0]) * 100, 2)
+    except:
+        return 0.0
 
 # ------------------ SKILL EXTRACTION ------------------
 
@@ -73,7 +73,6 @@ def extract_skills(resume_text):
 
 @app.post("/recommend-from-resume")
 async def recommend_from_resume(file: UploadFile = File(...)):
-
     try:
         contents = await file.read()
         resume_text = extract_text_from_pdf(contents)
@@ -81,19 +80,13 @@ async def recommend_from_resume(file: UploadFile = File(...)):
         if not resume_text.strip():
             return {"results": []}
 
-        # 🔥 Extract skills
         skills = extract_skills(resume_text)
 
-        # If no skills found
         if not skills:
             skills = ["software engineer"]
 
-        # Create clean search query
         search_query = " ".join(skills[:5])
 
-        print("Search Query:", search_query)
-
-        # RapidAPI endpoint
         url = "https://jsearch.p.rapidapi.com/search"
 
         querystring = {
@@ -111,8 +104,6 @@ async def recommend_from_resume(file: UploadFile = File(...)):
         response = requests.get(url, headers=headers, params=querystring)
 
         data = response.json()
-
-        print("API Response:", data)
 
         results = []
 
