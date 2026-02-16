@@ -1,0 +1,82 @@
+# ==========================================
+# ROOT LEVEL
+# ==========================================
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+backend/.env*
+frontend/.env*
+
+# ==========================================
+# BACKEND (Python / FastAPI)
+# ==========================================
+
+# Virtual environment
+venv/
+backend/venv/
+.env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Vector database (Chroma / embeddings storage)
+backend/vector_db/
+
+# Large generated datasets (optional – remove if needed)
+backend/jobs_data/cleaned_jobs.csv
+backend/jobs_data/enhanced_jobs.csv
+
+# ==========================================
+# FRONTEND (Next.js)
+# ==========================================
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Next.js build output
+.next/
+frontend/.next/
+out/
+build/
+
+# Cache
+frontend/.cache/
+
+# Vercel
+.vercel/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# ==========================================
+# IDE / Editors
+# ==========================================
+
+.vscode/
+.idea/
+
+# ==========================================
+# Misc
+# ==========================================
+
+coverage/
+dist/
