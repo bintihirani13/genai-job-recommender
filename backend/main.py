@@ -4,7 +4,9 @@ import requests
 import os
 from dotenv import load_dotenv
 import fitz  # PyMuPDF
-from sklearn.feature_extraction.text import TfidfVectorizer
+from recommender import recommend_jobs
+
+from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 # ------------------ LOAD ENV ------------------
@@ -12,7 +14,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 load_dotenv()
 RAPID_KEY = os.getenv("RAPID_API_KEY")
 
-# ------------------ APP INIT ------------------
+# ------------------ MODEL ------------------
+
+model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# ------------------ APP ------------------
 
 app = FastAPI()
 
@@ -24,52 +30,88 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ------------------ HOME ROUTE ------------------
+# ------------------ HOME ------------------
 
 @app.get("/")
 def home():
     return {"message": "GenAI Job Recommender Running 🚀"}
 
-# ------------------ PDF TEXT EXTRACTION ------------------
+# ------------------ PDF TEXT ------------------
 
 def extract_text_from_pdf(file_bytes):
     text = ""
     pdf = fitz.open(stream=file_bytes, filetype="pdf")
     for page in pdf:
         text += page.get_text()
-    return text
+    return text.lower()
 
-# ------------------ MATCH SCORE (Lightweight) ------------------
+# ------------------ SKILLS ------------------
+
+IMPORTANT_SKILLS = {
+    "python", "machine learning", "data science", "deep learning",
+    "nlp", "tensorflow", "pytorch", "sql", "data"
+}
+
+def extract_skills(text):
+    found = []
+    text = text.lower()
+    for skill in IMPORTANT_SKILLS:
+        if skill in text:
+            found.append(skill)
+    return found
+
+# ------------------ 🔥 MATCH SCORE ------------------
 
 def calculate_match_score(resume_text, job_text):
     try:
-        vectorizer = TfidfVectorizer(stop_words="english")
-        tfidf = vectorizer.fit_transform([resume_text, job_text])
-        score = cosine_similarity(tfidf[0:1], tfidf[1:2])
-        return round(float(score[0][0]) * 100, 2)
+        resume_text = resume_text.lower()
+        job_text = job_text.lower()
+
+        # ✅ Extract skills
+        resume_skills = set(extract_skills(resume_text))
+        job_skills = set(extract_skills(job_text))
+
+        # ✅ Skill overlap
+        overlap = len(resume_skills & job_skills)
+
+        if len(resume_skills) == 0:
+            skill_score = 0
+        else:
+            skill_score = (overlap / len(resume_skills)) * 100
+
+        # ✅ Semantic similarity (short text)
+        short_resume = " ".join(resume_skills)
+        short_job = " ".join(job_skills)
+
+        if short_resume == "" or short_job == "":
+            semantic_score = 0
+        else:
+            resume_embedding = model.encode([short_resume])
+            job_embedding = model.encode([short_job])
+
+            semantic_sim = cosine_similarity(resume_embedding, job_embedding)[0][0]
+            semantic_score = semantic_sim * 100
+
+        # ✅ Final balanced score
+        final_score = (0.7 * semantic_score) + (0.3 * skill_score)
+
+        # 🔥 FIXED BOOST (no overfitting)
+        final_score = min(final_score + 5, 92)
+
+        return round(final_score, 2)
+
     except:
         return 0.0
 
-# ------------------ SKILL EXTRACTION ------------------
+# ------------------ QUERY API ------------------
 
-def extract_skills(resume_text):
-    skill_list = [
-        "python", "machine learning", "data science", "deep learning",
-        "sql", "java", "react", "node", "aws", "azure",
-        "docker", "tensorflow", "pytorch", "nlp",
-        "computer vision", "power bi", "excel", "c++"
-    ]
+@app.post("/recommend")
+async def recommend(data: dict):
+    query = data.get("query", "")
+    jobs = recommend_jobs(query)
+    return {"results": jobs}
 
-    found_skills = []
-    lower_text = resume_text.lower()
-
-    for skill in skill_list:
-        if skill in lower_text:
-            found_skills.append(skill)
-
-    return found_skills
-
-# ------------------ MAIN API ------------------
+# ------------------ RESUME API ------------------
 
 @app.post("/recommend-from-resume")
 async def recommend_from_resume(file: UploadFile = File(...)):
@@ -102,7 +144,6 @@ async def recommend_from_resume(file: UploadFile = File(...)):
         }
 
         response = requests.get(url, headers=headers, params=querystring)
-
         data = response.json()
 
         results = []
@@ -125,7 +166,8 @@ async def recommend_from_resume(file: UploadFile = File(...)):
                 "location": location,
                 "apply_link": apply_link,
                 "match_score": match_score,
-                "skills_detected": skills
+                "skills_detected": skills,
+                "reason": f"Matched {len(set(skills) & set(extract_skills(job_text)))} skills"
             })
 
         return {"results": results}
