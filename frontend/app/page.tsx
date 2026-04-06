@@ -7,7 +7,7 @@ export default function Home() {
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
-  // 🔥 AUTO SWITCH API (local vs deployed)
+  // 🔥 AUTO SWITCH API (LOCAL + DEPLOYED)
   const API_URL =
     process.env.NODE_ENV === "development"
       ? "http://127.0.0.1:8000"
@@ -38,11 +38,11 @@ export default function Home() {
       }
 
       const data = await response.json()
-      console.log("🔥 API RESPONSE:", data) // DEBUG
+      console.log("🔥 API RESPONSE:", data)
 
       setResults(data.results || [])
     } catch (error) {
-      alert("Something went wrong. Backend might be waking up. Try again.")
+      alert("Something went wrong. Backend might be waking up.")
     }
 
     setLoading(false)
@@ -55,7 +55,7 @@ export default function Home() {
         🚀 GenAI Job Recommender
       </h1>
 
-      {/* Upload Card */}
+      {/* Upload Section */}
       <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-2xl text-center">
 
         <h2 className="text-xl font-semibold mb-4 text-gray-800">
@@ -130,6 +130,7 @@ export default function Home() {
                     ></div>
                   </div>
 
+                  {/* 🔥 REASON */}
                   <p className="text-xs text-gray-500 mt-1">
                     {job.reason}
                   </p>
