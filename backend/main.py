@@ -4,9 +4,7 @@ import requests
 import os
 from dotenv import load_dotenv
 import fitz  # PyMuPDF
-from recommender import recommend_jobs
 
-from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 # ------------------ LOAD ENV ------------------
@@ -14,9 +12,16 @@ from sklearn.metrics.pairwise import cosine_similarity
 load_dotenv()
 RAPID_KEY = os.getenv("RAPID_API_KEY")
 
-# ------------------ MODEL ------------------
+# ------------------ LAZY MODEL LOAD ------------------
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+model = None
+
+def get_model():
+    global model
+    if model is None:
+        from sentence_transformers import SentenceTransformer
+        model = SentenceTransformer("paraphrase-MiniLM-L3-v2")  # 🔥 light model
+    return model
 
 # ------------------ APP ------------------
 
@@ -60,56 +65,45 @@ def extract_skills(text):
             found.append(skill)
     return found
 
-# ------------------ 🔥 MATCH SCORE ------------------
+# ------------------ MATCH SCORE ------------------
 
 def calculate_match_score(resume_text, job_text):
     try:
+        model = get_model()
+
         resume_text = resume_text.lower()
         job_text = job_text.lower()
 
-        # ✅ Extract skills
+        # ✅ Skills
         resume_skills = set(extract_skills(resume_text))
         job_skills = set(extract_skills(job_text))
 
-        # ✅ Skill overlap
         overlap = len(resume_skills & job_skills)
 
-        if len(resume_skills) == 0:
-            skill_score = 0
-        else:
-            skill_score = (overlap / len(resume_skills)) * 100
+        skill_score = (overlap / len(resume_skills)) * 100 if resume_skills else 0
 
-        # ✅ Semantic similarity (short text)
+        # ✅ Semantic (short text only)
         short_resume = " ".join(resume_skills)
         short_job = " ".join(job_skills)
 
-        if short_resume == "" or short_job == "":
-            semantic_score = 0
-        else:
+        if short_resume and short_job:
             resume_embedding = model.encode([short_resume])
             job_embedding = model.encode([short_job])
 
             semantic_sim = cosine_similarity(resume_embedding, job_embedding)[0][0]
             semantic_score = semantic_sim * 100
+        else:
+            semantic_score = 0
 
-        # ✅ Final balanced score
+        # ✅ Final score
         final_score = (0.7 * semantic_score) + (0.3 * skill_score)
 
-        # 🔥 FIXED BOOST (no overfitting)
         final_score = min(final_score + 5, 92)
 
         return round(final_score, 2)
 
     except:
         return 0.0
-
-# ------------------ QUERY API ------------------
-
-@app.post("/recommend")
-async def recommend(data: dict):
-    query = data.get("query", "")
-    jobs = recommend_jobs(query)
-    return {"results": jobs}
 
 # ------------------ RESUME API ------------------
 

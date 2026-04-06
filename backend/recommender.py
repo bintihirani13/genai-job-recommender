@@ -1,91 +1,82 @@
-import chromadb
-import numpy as np
+# recommender.py
+
 from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
-model = SentenceTransformer("paraphrase-MiniLM-L3-v2")
+# ------------------ LAZY LOAD MODEL ------------------
 
-client = chromadb.PersistentClient(path="vector_db")
-collection = client.get_collection(name="jobs_collection")
+model = None
 
+def get_model():
+    global model
+    if model is None:
+        model = SentenceTransformer("paraphrase-MiniLM-L3-v2")  # 🔥 light model
+    return model
 
-# 🔥 Important skills (weighted)
-IMPORTANT_SKILLS = {
-    "python", "machine", "learning", "deep", "nlp",
-    "tensorflow", "pytorch", "sql", "data", "ai"
-}
-
+# ------------------ QUERY ENHANCEMENT ------------------
 
 def enhance_query(query):
+    synonyms = {
+        "web dev": "frontend backend full stack web development react node",
+        "ai": "machine learning deep learning nlp artificial intelligence",
+        "data": "data science python sql analytics"
+    }
+
     query = query.lower()
-    if "ai" in query:
-        query += " machine learning deep learning nlp python tensorflow pytorch"
+
+    for key, value in synonyms.items():
+        if key in query:
+            query += " " + value
+
     return query
 
+# ------------------ MAIN RECOMMENDER ------------------
 
-def clean_text(text):
-    return text.lower().strip()
+def recommend_jobs(user_query, jobs_data, top_k=3):
 
+    model = get_model()
 
-def recommend_jobs(user_query, top_k=3):
     enhanced_query = enhance_query(user_query)
-    enhanced_query = clean_text(enhanced_query)
 
-    query_embedding = model.encode([enhanced_query])
+    query_embedding = model.encode(enhanced_query)
 
-    results = collection.query(
-        query_embeddings=query_embedding.tolist(),
-        n_results=top_k,
-        include=["documents", "metadatas", "embeddings"]
-    )
+    scores = []
 
-    recommended_jobs = []
+    for job in jobs_data:
+        job_text = (job.get("title", "") + " " + job.get("description", "")).lower()
 
-    for i in range(len(results["documents"][0])):
+        job_embedding = model.encode(job_text)
 
-        job_description = results["documents"][0][i]
-        metadata = results["metadatas"][0][i]
-        job_embedding = np.array(results["embeddings"][0][i]).reshape(1, -1)
+        # cosine similarity
+        similarity = np.dot(query_embedding, job_embedding) / (
+            np.linalg.norm(query_embedding) * np.linalg.norm(job_embedding)
+        )
 
-        # ✅ 1. Semantic score
-        semantic_sim = cosine_similarity(query_embedding, job_embedding)[0][0]
-        semantic_score = semantic_sim * 100
+        score = round(float(similarity) * 100, 2)
 
-        # ✅ 2. Smart skill score (weighted 🔥)
-        user_words = set(enhanced_query.split())
-        job_words = set(clean_text(job_description).split())
+        # 🔥 small boost
+        if score > 50:
+            score += 10
+        elif score > 30:
+            score += 5
 
-        overlap = user_words & job_words
+        score = min(score, 95)
 
-        score = 0
-        for word in overlap:
-            if word in IMPORTANT_SKILLS:
-                score += 2   # important words double weight
-            else:
-                score += 1
+        scores.append((score, job))
 
-        if len(user_words) == 0:
-            skill_score = 0
-        else:
-            skill_score = (score / len(user_words)) * 100
+    # sort by score
+    scores.sort(key=lambda x: x[0], reverse=True)
 
-        # ✅ 3. Final score (balanced)
-        final_score = (0.85 * semantic_score) + (0.15 * skill_score)
+    results = []
 
-        # small boost
-        final_score = min(final_score + 10, 95)
-
-        final_score = round(final_score, 2)
-
-        recommended_jobs.append({
-            "job_title": metadata.get("job_title", "N/A"),
-            "company": metadata.get("company", "N/A"),
-            "location": metadata.get("location", "N/A"),
-            "experience": metadata.get("experience", "Not specified"),
-            "apply_link": metadata.get("apply_link", "#"),
-            "similarity": final_score,
-            "reason": f"Matched {len(overlap)} keywords (weighted scoring)",
-            "full_description": job_description
+    for score, job in scores[:top_k]:
+        results.append({
+            "job_title": job.get("title"),
+            "company": job.get("company"),
+            "location": job.get("location"),
+            "apply_link": job.get("apply_link"),
+            "similarity": score,
+            "reason": f"Semantic match score {score}%"
         })
 
-    return recommended_jobs
+    return results
