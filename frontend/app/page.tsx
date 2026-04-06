@@ -7,6 +7,12 @@ export default function Home() {
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
+  // 🔥 AUTO SWITCH API (local vs deployed)
+  const API_URL =
+    process.env.NODE_ENV === "development"
+      ? "http://127.0.0.1:8000"
+      : "https://genai-job-backend.onrender.com"
+
   const handleUpload = async () => {
     if (!file) {
       alert("Please upload a resume first")
@@ -20,7 +26,7 @@ export default function Home() {
 
     try {
       const response = await fetch(
-        "https://genai-job-backend.onrender.com/recommend-from-resume",
+        `${API_URL}/recommend-from-resume`,
         {
           method: "POST",
           body: formData,
@@ -32,9 +38,11 @@ export default function Home() {
       }
 
       const data = await response.json()
+      console.log("🔥 API RESPONSE:", data) // DEBUG
+
       setResults(data.results || [])
     } catch (error) {
-      alert("Something went wrong. Backend might be waking up. Try again in 30 seconds.")
+      alert("Something went wrong. Backend might be waking up. Try again.")
     }
 
     setLoading(false)
@@ -80,7 +88,7 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Results Section */}
+      {/* Results */}
       {results.length > 0 && (
         <div className="mt-12 w-full max-w-4xl">
 
@@ -109,10 +117,24 @@ export default function Home() {
                     {job.location || "Location not specified"}
                   </p>
 
+                  {/* 🔥 MATCH SCORE */}
                   <p className="mt-2 text-sm font-semibold text-blue-600">
                     🎯 AI Match Score: {job.match_score}%
                   </p>
 
+                  {/* 🔥 PROGRESS BAR */}
+                  <div className="w-full bg-gray-200 rounded-full h-3 mt-2">
+                    <div
+                      className="bg-green-500 h-3 rounded-full"
+                      style={{ width: `${job.match_score}%` }}
+                    ></div>
+                  </div>
+
+                  <p className="text-xs text-gray-500 mt-1">
+                    {job.reason}
+                  </p>
+
+                  {/* 🔥 SKILLS */}
                   <div className="mt-3 flex flex-wrap gap-2">
                     {job.skills_detected?.map((skill: string, i: number) => (
                       <span
